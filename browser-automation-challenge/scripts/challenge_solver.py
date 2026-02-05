@@ -800,7 +800,7 @@ class ChallengeSolver:
         return None
 
     def handle_timing_challenge(self) -> Optional[str]:
-        """Handle Timing Challenge - click at the right time."""
+        """Handle Timing Challenge - click at the right time or capture window."""
         try:
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             if "Timing Challenge" not in body_text:
@@ -808,10 +808,28 @@ class ChallengeSolver:
             
             logger.info("Detected: Timing Challenge")
             
-            # Click the timing button multiple times
+            # Check if this is a "Capture" window variant
+            if "Capture" in body_text or "Window will appear" in body_text:
+                # Wait for the capture window to appear and click it
+                for attempt in range(10):
+                    btns = self.driver.find_elements(By.XPATH, 
+                        "//button[contains(text(), 'Capture')]")
+                    for btn in btns:
+                        if btn.is_displayed():
+                            self.safe_click(btn)
+                            time.sleep(0.3)
+                            # Check for code after clicking
+                            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                            code = self.find_code_in_text(body_text)
+                            if code:
+                                logger.info(f"Found code via timing capture: {code}")
+                                return code
+                    time.sleep(0.5)
+            
+            # Standard timing challenge - click buttons
             for _ in range(5):
                 btns = self.driver.find_elements(By.XPATH, 
-                    "//button[contains(text(), 'Click') or contains(text(), 'Stop')]")
+                    "//button[contains(text(), 'Click') or contains(text(), 'Stop') or contains(text(), 'Capture')]")
                 for btn in btns:
                     if btn.is_displayed():
                         self.safe_click(btn)
@@ -960,6 +978,9 @@ class ChallengeSolver:
             code = self.find_code_in_text(body_text)
             if code:
                 logger.info(f"Found code directly in page: {code}")
+            else:
+                # Log first 500 chars of page for debugging unhandled challenge types
+                logger.debug(f"No code found. Page content: {body_text[:500]}")
         
         # If we found a code, enter it
         if code:
