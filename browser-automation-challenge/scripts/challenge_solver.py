@@ -380,6 +380,115 @@ class ChallengeSolver:
         
         return None
 
+    def dismiss_modal_overlay(self) -> bool:
+        """Dismiss modal overlay by selecting correct option and submitting.
+        
+        Returns True if a modal was dismissed, False otherwise.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Please Select" not in body_text:
+                return False
+            
+            logger.debug("Found modal overlay - attempting to dismiss")
+            
+            # Step 1: Scroll within the modal to reveal radio button options
+            # The modal has a scrollable container with overflow-y-auto class
+            js_scroll_modal = """
+            const scrollContainers = document.querySelectorAll('div[class*="overflow-y-auto"]');
+            for (const container of scrollContainers) {
+                // Scroll to bottom to reveal radio buttons
+                container.scrollTop = container.scrollHeight;
+            }
+            return scrollContainers.length;
+            """
+            self.driver.execute_script(js_scroll_modal)
+            time.sleep(0.3)
+            
+            # Step 2: Find and click the correct radio button option
+            # The correct option contains "Correct Choice" in its label text
+            js_click_correct = """
+            // Find all labels that might be radio button options
+            const labels = document.querySelectorAll('label');
+            for (const label of labels) {
+                const text = label.textContent || '';
+                if (text.includes('Correct Choice')) {
+                    // Click the label to select the radio button
+                    label.click();
+                    return 'clicked: ' + text;
+                }
+            }
+            
+            // Also try finding by span or div text
+            const allElements = document.querySelectorAll('div, span');
+            for (const elem of allElements) {
+                const text = elem.textContent || '';
+                if (text.includes('Correct Choice') && text.length < 50) {
+                    elem.click();
+                    return 'clicked_elem: ' + text;
+                }
+            }
+            
+            return null;
+            """
+            result = self.driver.execute_script(js_click_correct)
+            
+            if result:
+                logger.debug(f"Modal option clicked: {result}")
+                time.sleep(0.2)
+                
+                # Step 3: Click "Submit & Continue" button
+                submit_btns = self.driver.find_elements(
+                    By.XPATH, "//button[contains(text(), 'Submit')]"
+                )
+                for btn in submit_btns:
+                    if btn.is_displayed():
+                        self.safe_click(btn)
+                        time.sleep(0.3)
+                        logger.debug("Modal submitted")
+                        return True
+            
+            # Fallback: Use Selenium to find and click elements
+            # First scroll the modal
+            modals = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'overflow-y-auto')]")
+            for modal in modals:
+                try:
+                    self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", modal)
+                    time.sleep(0.2)
+                except:
+                    pass
+            
+            # Find elements containing "Correct Choice"
+            correct_elements = self.driver.find_elements(By.XPATH, 
+                "//label[contains(text(), 'Correct Choice')] | //span[contains(text(), 'Correct Choice')] | //*[contains(text(), 'Correct Choice')]")
+            
+            for elem in correct_elements:
+                try:
+                    if elem.is_displayed():
+                        self.safe_click(elem)
+                        time.sleep(0.2)
+                        logger.debug(f"Clicked element with text: {elem.text[:30] if elem.text else 'unknown'}")
+                        
+                        # Click submit
+                        submit_btns = self.driver.find_elements(
+                            By.XPATH, "//button[contains(text(), 'Submit')]"
+                        )
+                        for btn in submit_btns:
+                            if btn.is_displayed():
+                                self.safe_click(btn)
+                                time.sleep(0.3)
+                                logger.debug("Modal dismissed via fallback")
+                                return True
+                except Exception as e:
+                    logger.debug(f"Error clicking element: {e}")
+                    continue
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error dismissing modal: {e}")
+            return False
+
     def handle_modal_challenge(self) -> Optional[str]:
         """Handle Modal Challenge - select correct option and find code."""
         try:
@@ -389,36 +498,14 @@ class ChallengeSolver:
             
             logger.info("Detected: Modal Challenge")
             
-            # Find and click the correct option
-            labels = self.driver.find_elements(By.TAG_NAME, "label")
-            for label in labels:
-                text = label.text.lower()
-                if 'correct' in text or 'right' in text:
-                    radio = label.find_elements(By.XPATH, ".//input[@type='radio']")
-                    if radio:
-                        self.safe_click(radio[0])
-                    else:
-                        self.safe_click(label)
-                    time.sleep(0.2)
-                    
-                    # Submit modal
-                    submit_btns = self.driver.find_elements(
-                        By.XPATH, "//button[contains(text(), 'Submit')]"
-                    )
-                    for btn in submit_btns:
-                        if btn.is_displayed():
-                            self.safe_click(btn)
-                            break
-                    
-                    time.sleep(0.5)
-                    
-                    # Check for code after modal submission
-                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    code = self.find_code_in_text(body_text)
-                    if code:
-                        logger.info(f"Found code via modal: {code}")
-                        return code
-                    break
+            # Try to dismiss the modal and check for code
+            if self.dismiss_modal_overlay():
+                time.sleep(0.5)
+                body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                code = self.find_code_in_text(body_text)
+                if code:
+                    logger.info(f"Found code via modal: {code}")
+                    return code
             
             return None
             
@@ -709,28 +796,68 @@ class ChallengeSolver:
         return None
 
     def handle_split_parts(self) -> Optional[str]:
-        """Handle Split Parts Challenge - click all parts to collect them."""
+        """Handle Split Parts Challenge - click all parts to collect them.
+        
+        The parts are displayed as clickable elements positioned on the page.
+        User needs to click each part to collect it, then the code is revealed.
+        """
         try:
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
-            if "Split Parts" not in body_text and "Collect" not in body_text:
+            if "Split Parts" not in body_text:
                 return None
             
             logger.info("Detected: Split Parts Challenge")
             
-            # Click all part buttons
-            parts = self.driver.find_elements(By.XPATH, 
-                "//button[contains(text(), 'Part')] | //*[contains(@class, 'part')]")
-            for part in parts:
-                if part.is_displayed():
-                    self.safe_click(part)
-                    time.sleep(0.2)
+            # Find and click all part elements
+            # Parts are displayed as divs with "Part N:" text
+            part_elements = self.driver.find_elements(By.XPATH, 
+                "//*[contains(text(), 'Part 1:') or contains(text(), 'Part 2:') or contains(text(), 'Part 3:') or contains(text(), 'Part 4:') or contains(text(), 'Part 5:')]")
             
+            clicked_count = 0
+            for elem in part_elements:
+                try:
+                    if elem.is_displayed():
+                        self.safe_click(elem)
+                        clicked_count += 1
+                        logger.debug(f"Clicked part element {clicked_count}")
+                        time.sleep(0.2)
+                except:
+                    continue
+            
+            # Also try clicking elements with "Part" in their text
+            if clicked_count == 0:
+                part_divs = self.driver.find_elements(By.XPATH, 
+                    "//div[contains(., 'Part') and contains(@class, 'absolute')]")
+                for div in part_divs:
+                    try:
+                        if div.is_displayed():
+                            self.safe_click(div)
+                            clicked_count += 1
+                            logger.debug(f"Clicked part div {clicked_count}")
+                            time.sleep(0.2)
+                    except:
+                        continue
+            
+            logger.debug(f"Clicked {clicked_count} part elements")
+            
+            # Wait for the code to be revealed
             time.sleep(0.5)
+            
+            # Check for code in the page
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             code = self.find_code_in_text(body_text)
             if code:
                 logger.info(f"Found code via split_parts: {code}")
                 return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via split_parts (from span): {text}")
+                    return text
                 
         except Exception as e:
             logger.debug(f"Error in split_parts: {e}")
@@ -848,8 +975,294 @@ class ChallengeSolver:
         
         return None
 
+    def handle_audio_challenge(self) -> Optional[str]:
+        """Handle Audio Challenge - play audio and click Complete Challenge to reveal code.
+        
+        The audio challenge uses speechSynthesis to play audio. In automated browsers,
+        speechSynthesis may not work properly (onend callback never fires), so we need to:
+        1. Click "Play Audio" to start
+        2. Use JavaScript to force the speechSynthesis to complete by triggering onend
+        3. Click "Complete Challenge" to reveal the code
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Audio Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Audio Challenge")
+            
+            # Dismiss any blocking modals first
+            self.dismiss_modal_overlay()
+            self.dismiss_all_popups()
+            
+            # Use JavaScript to force the audio challenge to complete
+            # The speechSynthesis API doesn't work in automated Chrome, so we need to
+            # manually trigger the completion by calling the onend callback
+            js_force_audio_complete = """
+            // Store original speak function
+            const originalSpeak = window.speechSynthesis.speak.bind(window.speechSynthesis);
+            
+            // Override speak to immediately trigger onend
+            window.speechSynthesis.speak = function(utterance) {
+                // Call original to start the process
+                try {
+                    originalSpeak(utterance);
+                } catch(e) {}
+                
+                // Force trigger onend after a short delay
+                setTimeout(() => {
+                    if (utterance.onend) {
+                        utterance.onend(new Event('end'));
+                    }
+                }, 500);
+            };
+            
+            return true;
+            """
+            self.driver.execute_script(js_force_audio_complete)
+            
+            # Click "Play Audio" button
+            play_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Play Audio')]")
+            for btn in play_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Play Audio button")
+                    break
+            
+            # Wait for the forced onend callback to trigger
+            time.sleep(1.5)
+            
+            # Check if "Complete Challenge" button appeared
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Audio played!" in body_text or "Play Again" in body_text:
+                logger.debug("Audio finished (via forced onend)")
+            
+            # Now look for "Complete Challenge" button
+            complete_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Complete Challenge') or contains(text(), 'Complete')]")
+            for btn in complete_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Complete Challenge button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via audio: {code}")
+                return code
+            
+            # If no code yet, look for the code in the green box
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via audio (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in audio_challenge: {e}")
+        
+        return None
+
+    def handle_video_challenge(self) -> Optional[str]:
+        """Handle Video Challenge - seek through video frames and click Complete to reveal code.
+        
+        The video challenge has a canvas showing video frames. User needs to:
+        1. Seek through frames at least 3 times using +1, -1, +10, -10 buttons
+        2. Click "Complete Challenge" to reveal the code
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Video Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Video Challenge")
+            
+            # Dismiss any blocking modals first
+            self.dismiss_modal_overlay()
+            self.dismiss_all_popups()
+            
+            # Click seek buttons at least 3 times
+            seek_count = 0
+            for _ in range(4):  # Do 4 seeks to be safe
+                # Try to find and click seek buttons (+1, -1, +10, -10)
+                seek_btns = self.driver.find_elements(By.XPATH, 
+                    "//button[contains(text(), '+1') or contains(text(), '-1') or contains(text(), '+10') or contains(text(), '-10')]")
+                for btn in seek_btns:
+                    if btn.is_displayed():
+                        self.safe_click(btn)
+                        seek_count += 1
+                        logger.debug(f"Clicked seek button ({seek_count})")
+                        time.sleep(0.3)
+                        break
+            
+            # Also try clicking the "Frame X" button to go to target frame
+            frame_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Frame')]")
+            for btn in frame_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Frame button")
+                    time.sleep(0.3)
+                    break
+            
+            # Now click "Complete Challenge" button
+            complete_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Complete Challenge') or contains(text(), 'Complete')]")
+            for btn in complete_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Complete Challenge button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via video: {code}")
+                return code
+            
+            # If no code yet, look for the code in the green box
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via video (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in video_challenge: {e}")
+        
+        return None
+
+    def handle_multi_tab_challenge(self) -> Optional[str]:
+        """Handle Multi-Tab Challenge - visit all tabs to reveal code.
+        
+        The multi-tab challenge requires clicking all tab buttons to collect parts.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Multi-Tab Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Multi-Tab Challenge")
+            
+            # Click all tab buttons
+            for i in range(5):  # Try up to 5 tabs
+                tab_btns = self.driver.find_elements(By.XPATH, 
+                    f"//button[contains(text(), 'Tab {i+1}') or contains(text(), 'Tab')]")
+                for btn in tab_btns:
+                    if btn.is_displayed() and f"Tab {i+1}" in btn.text:
+                        self.safe_click(btn)
+                        logger.debug(f"Clicked Tab {i+1}")
+                        time.sleep(0.2)
+                        break
+            
+            # Click "Reveal Code" or "All Tabs Visited" button
+            reveal_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Reveal') or contains(text(), 'All Tabs') or contains(text(), 'Complete')]")
+            for btn in reveal_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked reveal button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via multi-tab: {code}")
+                return code
+                
+        except Exception as e:
+            logger.debug(f"Error in multi_tab_challenge: {e}")
+        
+        return None
+
+    def handle_gesture_challenge(self) -> Optional[str]:
+        """Handle Gesture Challenge - draw a gesture on canvas to reveal code.
+        
+        The gesture challenge requires drawing a specific shape (circle, line, etc.) on canvas.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Gesture Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Gesture Challenge")
+            
+            # Find canvas and draw a circle gesture
+            canvases = self.driver.find_elements(By.TAG_NAME, "canvas")
+            for canvas in canvases:
+                if canvas.is_displayed():
+                    # Draw a circle gesture using JavaScript
+                    js_draw_circle = """
+                    const canvas = arguments[0];
+                    const rect = canvas.getBoundingClientRect();
+                    const centerX = rect.width / 2;
+                    const centerY = rect.height / 2;
+                    const radius = 50;
+                    
+                    function dispatchMouseEvent(type, x, y) {
+                        const event = new MouseEvent(type, {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: rect.left + x,
+                            clientY: rect.top + y
+                        });
+                        canvas.dispatchEvent(event);
+                    }
+                    
+                    // Draw a circle
+                    const points = 20;
+                    dispatchMouseEvent('mousedown', centerX + radius, centerY);
+                    for (let i = 1; i <= points; i++) {
+                        const angle = (i / points) * 2 * Math.PI;
+                        const x = centerX + radius * Math.cos(angle);
+                        const y = centerY + radius * Math.sin(angle);
+                        dispatchMouseEvent('mousemove', x, y);
+                    }
+                    dispatchMouseEvent('mouseup', centerX + radius, centerY);
+                    
+                    return true;
+                    """
+                    self.driver.execute_script(js_draw_circle, canvas)
+                    time.sleep(0.5)
+                    logger.debug("Drew circle gesture via JavaScript")
+                    break
+            
+            # Click "Complete" or "Submit" button
+            btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Complete') or contains(text(), 'Submit') or contains(text(), 'Reveal')]")
+            for btn in btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    time.sleep(0.3)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via gesture: {code}")
+                return code
+                
+        except Exception as e:
+            logger.debug(f"Error in gesture_challenge: {e}")
+        
+        return None
+
     def handle_canvas_challenge(self) -> Optional[str]:
-        """Handle Canvas Challenge - draw or interact with canvas."""
+        """Handle Canvas Challenge - draw 3+ strokes on canvas to reveal code."""
         try:
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             if "Canvas" not in body_text:
@@ -857,26 +1270,61 @@ class ChallengeSolver:
             
             logger.info("Detected: Canvas Challenge")
             
-            # Find canvas and draw on it
+            # Find canvas and draw 3+ separate strokes using JavaScript mouse events
             canvases = self.driver.find_elements(By.TAG_NAME, "canvas")
             for canvas in canvases:
                 if canvas.is_displayed():
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(canvas)
-                    actions.click_and_hold()
-                    actions.move_by_offset(50, 50)
-                    actions.move_by_offset(-50, 50)
-                    actions.move_by_offset(-50, -50)
-                    actions.release()
-                    actions.perform()
-                    time.sleep(0.3)
+                    # Use JavaScript to dispatch mouse events directly (works better with React)
+                    js_draw_strokes = """
+                    const canvas = arguments[0];
+                    const rect = canvas.getBoundingClientRect();
+                    
+                    function dispatchMouseEvent(type, x, y) {
+                        const event = new MouseEvent(type, {
+                            bubbles: true,
+                            cancelable: true,
+                            view: window,
+                            clientX: rect.left + x,
+                            clientY: rect.top + y
+                        });
+                        canvas.dispatchEvent(event);
+                    }
+                    
+                    // Draw 4 separate strokes
+                    const strokes = [
+                        [{x: 50, y: 50}, {x: 100, y: 100}],
+                        [{x: 150, y: 50}, {x: 150, y: 120}],
+                        [{x: 50, y: 150}, {x: 120, y: 150}],
+                        [{x: 200, y: 50}, {x: 250, y: 100}]
+                    ];
+                    
+                    strokes.forEach((stroke, i) => {
+                        // mousedown
+                        dispatchMouseEvent('mousedown', stroke[0].x, stroke[0].y);
+                        // mousemove (multiple points for smoother line)
+                        const dx = (stroke[1].x - stroke[0].x) / 5;
+                        const dy = (stroke[1].y - stroke[0].y) / 5;
+                        for (let j = 1; j <= 5; j++) {
+                            dispatchMouseEvent('mousemove', stroke[0].x + dx * j, stroke[0].y + dy * j);
+                        }
+                        // mouseup
+                        dispatchMouseEvent('mouseup', stroke[1].x, stroke[1].y);
+                    });
+                    
+                    return true;
+                    """
+                    self.driver.execute_script(js_draw_strokes, canvas)
+                    time.sleep(0.5)
+                    logger.debug("Drew 4 strokes via JavaScript")
+                    break
             
-            # Click any submit/complete button
+            # Click "Reveal Code" button (enabled after 3+ strokes)
             btns = self.driver.find_elements(By.XPATH, 
-                "//button[contains(text(), 'Submit') or contains(text(), 'Complete') or contains(text(), 'Done')]")
+                "//button[contains(text(), 'Reveal') or contains(text(), 'Submit') or contains(text(), 'Complete') or contains(text(), 'Done')]")
             for btn in btns:
                 if btn.is_displayed():
                     self.safe_click(btn)
+                    time.sleep(0.3)
                     break
             
             time.sleep(0.5)
@@ -939,6 +1387,10 @@ class ChallengeSolver:
         time.sleep(0.1)
         self.dismiss_all_popups()
         
+        # Try to dismiss any modal overlays that might be blocking
+        self.dismiss_modal_overlay()
+        time.sleep(0.2)
+        
         # Scroll to top to see the challenge
         self.driver.execute_script("window.scrollTo(0, 0);")
         time.sleep(0.2)
@@ -947,8 +1399,12 @@ class ChallengeSolver:
         code = None
         
         # All challenge handlers in order of priority
+        # Note: Modal challenge is now handled separately as an overlay
         handlers = [
-            self.handle_modal_challenge,
+            self.handle_audio_challenge,
+            self.handle_video_challenge,
+            self.handle_multi_tab_challenge,
+            self.handle_gesture_challenge,
             self.handle_keyboard_sequence,
             self.handle_delayed_reveal,
             self.handle_puzzle_solve,
@@ -965,6 +1421,7 @@ class ChallengeSolver:
             self.handle_memory_challenge,
             self.handle_timing_challenge,
             self.handle_canvas_challenge,
+            self.handle_modal_challenge,  # Try modal last as fallback
         ]
         
         for handler in handlers:
@@ -979,8 +1436,18 @@ class ChallengeSolver:
             if code:
                 logger.info(f"Found code directly in page: {code}")
             else:
-                # Log first 500 chars of page for debugging unhandled challenge types
-                logger.debug(f"No code found. Page content: {body_text[:500]}")
+                # Log page content for debugging unhandled challenge types
+                logger.warning(f"No code found. Page preview: {body_text[:300]}...")
+                
+                # Check if there's a blocking modal that needs to be dismissed
+                if "Please Select" in body_text or "Please select" in body_text:
+                    logger.info("Detected blocking modal - attempting to dismiss")
+                    if self.dismiss_modal_overlay():
+                        time.sleep(0.5)
+                        body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                        code = self.find_code_in_text(body_text)
+                        if code:
+                            logger.info(f"Found code after dismissing modal: {code}")
         
         # If we found a code, enter it
         if code:
