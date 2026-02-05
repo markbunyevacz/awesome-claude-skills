@@ -865,29 +865,88 @@ class ChallengeSolver:
         return None
 
     def handle_sequence_challenge(self) -> Optional[str]:
-        """Handle Sequence Challenge - click buttons in order."""
+        """Handle Sequence Challenge - complete all 4 actions in order.
+        
+        The sequence challenge requires:
+        1. Click a button ("Click Me")
+        2. Hover over an area
+        3. Type in an input field
+        4. Scroll inside a scroll box
+        """
         try:
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
-            if "Sequence Challenge" not in body_text and "Click in order" not in body_text:
+            if "Sequence Challenge" not in body_text:
                 return None
             
             logger.info("Detected: Sequence Challenge")
             
-            # Click buttons 1-6 in order
-            for i in range(1, 7):
-                btns = self.driver.find_elements(By.XPATH, f"//button[text()='{i}']")
-                for btn in btns:
-                    if btn.is_displayed():
-                        self.safe_click(btn)
-                        time.sleep(0.3)
-                        break
+            # Action 1: Click the "Click Me" button
+            click_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Click Me')]")
+            for btn in click_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Sequence: Clicked 'Click Me' button")
+                    time.sleep(0.3)
+                    break
             
-            time.sleep(0.5)
+            # Action 2: Hover over the hover area
+            hover_areas = self.driver.find_elements(By.XPATH, 
+                "//*[contains(text(), 'Hover over this area')]")
+            for area in hover_areas:
+                if area.is_displayed():
+                    ActionChains(self.driver).move_to_element(area).perform()
+                    logger.debug("Sequence: Hovered over area")
+                    time.sleep(0.3)
+                    break
+            
+            # Action 3: Type in the input field (focus triggers the action)
+            inputs = self.driver.find_elements(By.XPATH, 
+                "//input[@placeholder='Click/type here'] | //input[contains(@class, 'pointer-events-auto')]")
+            for inp in inputs:
+                if inp.is_displayed():
+                    self.safe_click(inp)
+                    inp.send_keys("test")
+                    logger.debug("Sequence: Typed in input field")
+                    time.sleep(0.3)
+                    break
+            
+            # Action 4: Scroll inside the scroll box
+            scroll_boxes = self.driver.find_elements(By.XPATH, 
+                "//*[contains(@class, 'overflow-y-scroll') or contains(@class, 'overflow-scroll')]")
+            for box in scroll_boxes:
+                if box.is_displayed():
+                    # Use JavaScript to scroll inside the element
+                    self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", box)
+                    logger.debug("Sequence: Scrolled in scroll box")
+                    time.sleep(0.3)
+                    break
+            
+            # Click "Complete" button to reveal code
+            complete_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Complete')]")
+            for btn in complete_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Sequence: Clicked Complete button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
             body_text = self.driver.find_element(By.TAG_NAME, "body").text
             code = self.find_code_in_text(body_text)
             if code:
                 logger.info(f"Found code via sequence: {code}")
                 return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via sequence (from span): {text}")
+                    return text
                 
         except Exception as e:
             logger.debug(f"Error in sequence_challenge: {e}")
