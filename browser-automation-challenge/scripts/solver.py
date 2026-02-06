@@ -254,42 +254,57 @@ class ChallengeSolver:
         """Submit an answer to the challenge."""
         self.log(f"Submitting answer: '{answer}'")
         
-        # Find input field
-        page_data = await self.browser.extract_page_data()
-        input_fields = page_data.get("inputFields", [])
+        # Dismiss popups first to ensure input is accessible
+        await self.browser.dismiss_popups()
         
-        # Try to find the right input field
-        input_selector = None
-        for field in input_fields:
-            selector = field.get("selector")
-            if selector:
-                input_selector = selector
-                break
+        # Try multiple input selectors with short timeouts
+        input_selectors = [
+            "input[placeholder*='code' i]",
+            "input[placeholder*='character' i]",
+            "input[placeholder*='answer' i]",
+            "input[type='text']:visible",
+            "input[type='text']",
+            "input:not([type='hidden']):not([type='submit'])",
+        ]
         
-        # Fallback selectors
-        if not input_selector:
-            fallback_selectors = [
-                "input[type='text']",
-                "input[placeholder*='code' i]",
-                "input[placeholder*='answer' i]",
-                "input:not([type='hidden'])",
-                "input",
-            ]
-            for selector in fallback_selectors:
-                try:
-                    if await self.browser.type_text(selector, answer):
-                        input_selector = selector
-                        break
-                except:
-                    continue
+        for selector in input_selectors:
+            try:
+                # Check if element exists and is visible
+                element = self.browser.page.locator(selector).first
+                if await element.is_visible(timeout=1000):
+                    await element.fill(answer)
+                    self.log(f"Typed answer into: {selector}")
+                    await asyncio.sleep(0.3)
+                    
+                    # Submit by pressing Enter
+                    await element.press("Enter")
+                    return True
+            except Exception as e:
+                self.log(f"Input selector {selector} failed: {e}", "debug")
+                continue
         
-        if input_selector:
-            await self.browser.type_text(input_selector, answer)
-            await asyncio.sleep(0.3)
-            
-            # Submit
-            submitted = await self.browser.submit_form(input_selector)
-            return submitted
+        # Fallback: try JavaScript to find and fill input
+        try:
+            filled = await self.browser.page.evaluate(f"""
+                (() => {{
+                    const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                    for (const input of inputs) {{
+                        if (input.offsetParent !== null && !input.disabled) {{
+                            input.value = '{answer}';
+                            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }})()
+            """)
+            if filled:
+                self.log("Filled input via JavaScript")
+                await self.browser.page.keyboard.press("Enter")
+                return True
+        except Exception as e:
+            self.log(f"JS input fill failed: {e}", "debug")
         
         self.log("Could not find input field", "warning")
         return False

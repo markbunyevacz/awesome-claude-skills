@@ -341,10 +341,39 @@ class BrowserController:
         return self.page.url
     
     async def dismiss_popups(self) -> int:
-        """Dismiss any visible popups/modals."""
+        """Dismiss any visible popups/modals by clicking Dismiss buttons."""
         dismissed = 0
         
-        # Use JavaScript to remove ALL blocking overlays and modals
+        # First, click all "Dismiss" buttons (the correct way to close popups on this site)
+        # The X buttons are fake - we need to click the actual Dismiss buttons
+        dismiss_selectors = [
+            "button:has-text('Dismiss')",
+            "button:has-text('Accept')",
+            "button:has-text('Decline')",
+            "button:has-text('OK')",
+            "button:has-text('Got it')",
+            "button:has-text('I understand')",
+        ]
+        
+        # Keep clicking Dismiss buttons until none are left (max 10 iterations)
+        for _ in range(10):
+            clicked_any = False
+            for selector in dismiss_selectors:
+                try:
+                    # Check if element exists and is visible
+                    element = self.page.locator(selector).first
+                    if await element.is_visible(timeout=300):
+                        await element.click(timeout=500, force=True)
+                        dismissed += 1
+                        clicked_any = True
+                        await asyncio.sleep(0.3)
+                        break  # Start over to find next popup
+                except:
+                    pass
+            if not clicked_any:
+                break
+        
+        # Then use JavaScript to remove any remaining blocking overlays
         try:
             removed = await self.page.evaluate("""
                 (() => {
@@ -362,54 +391,11 @@ class BrowserController:
                         }
                     });
                     
-                    // Remove common overlay patterns
-                    const overlaySelectors = [
-                        '[class*="overlay"]',
-                        '[class*="modal"]',
-                        '[class*="popup"]',
-                        '.bg-black\\\\/70',
-                        '.bg-black\\\\/80',
-                        '[class*="z-[999"]',
-                        '[class*="z-[1000"]'
-                    ];
-                    
-                    overlaySelectors.forEach(selector => {
-                        try {
-                            document.querySelectorAll(selector).forEach(el => {
-                                if (el.classList.contains('fixed') || 
-                                    window.getComputedStyle(el).position === 'fixed') {
-                                    el.remove();
-                                    removed++;
-                                }
-                            });
-                        } catch (e) {}
-                    });
-                    
                     return removed;
                 })()
             """)
             dismissed += removed
         except Exception as e:
             logger.debug(f"Failed to remove overlays via JS: {e}")
-        
-        # Then try close buttons
-        close_selectors = [
-            "[aria-label='Close']",
-            ".close-button",
-            ".modal-close",
-            "button:has-text('Close')",
-            "button:has-text('×')",
-            "button:has-text('X')",
-            ".dismiss",
-            "[data-dismiss]",
-        ]
-        
-        for selector in close_selectors:
-            try:
-                if await self.click(selector, timeout=500, force=True):
-                    dismissed += 1
-                    await asyncio.sleep(0.2)
-            except:
-                pass
         
         return dismissed
