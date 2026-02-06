@@ -1398,6 +1398,379 @@ class ChallengeSolver:
         
         return None
 
+    def handle_shadow_dom_challenge(self) -> Optional[str]:
+        """Handle Shadow DOM Challenge - click through nested shadow levels.
+        
+        The challenge requires clicking through 3 nested levels in order,
+        then clicking "Reveal Code" button.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Shadow DOM Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Shadow DOM Challenge")
+            
+            # Click through shadow levels 1, 2, 3
+            for level in range(1, 4):
+                level_elements = self.driver.find_elements(By.XPATH, 
+                    f"//*[contains(text(), 'Shadow Level {level}')]")
+                for elem in level_elements:
+                    if elem.is_displayed():
+                        self.safe_click(elem)
+                        logger.debug(f"Clicked Shadow Level {level}")
+                        time.sleep(0.3)
+                        break
+            
+            # Click "Reveal Code" button
+            reveal_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Reveal Code') or contains(text(), 'Reveal')]")
+            for btn in reveal_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Reveal Code button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via shadow_dom: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via shadow_dom (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in shadow_dom_challenge: {e}")
+        
+        return None
+
+    def handle_websocket_challenge(self) -> Optional[str]:
+        """Handle WebSocket Challenge - connect and receive messages.
+        
+        The challenge requires clicking "Connect", waiting for messages,
+        then clicking "Reveal Code" button.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "WebSocket Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: WebSocket Challenge")
+            
+            # Click "Connect" button
+            connect_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Connect')]")
+            for btn in connect_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Connect button")
+                    break
+            
+            # Wait for messages to arrive (the challenge simulates WebSocket messages)
+            time.sleep(3)
+            
+            # Click "Reveal Code" button
+            reveal_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Reveal Code') or contains(text(), 'Reveal')]")
+            for btn in reveal_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Reveal Code button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via websocket: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via websocket (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in websocket_challenge: {e}")
+        
+        return None
+
+    def handle_service_worker_challenge(self) -> Optional[str]:
+        """Handle Service Worker Challenge - register and retrieve from cache.
+        
+        The challenge requires clicking "Register Service Worker", waiting for cache,
+        then clicking "Retrieve from Cache" button.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Service Worker Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Service Worker Challenge")
+            
+            # Click "Register Service Worker" button
+            register_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Register')]")
+            for btn in register_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Register button")
+                    break
+            
+            # Wait for cache to be populated
+            time.sleep(2)
+            
+            # Click "Retrieve from Cache" button
+            retrieve_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Retrieve') or contains(text(), 'Cache')]")
+            for btn in retrieve_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Retrieve button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via service_worker: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via service_worker (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in service_worker_challenge: {e}")
+        
+        return None
+
+    def handle_mutation_challenge(self) -> Optional[str]:
+        """Handle Mutation Challenge - trigger DOM mutations.
+        
+        The challenge requires clicking "Trigger Mutation" 5 times,
+        then clicking "Complete" button.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Mutation Challenge" not in body_text:
+                return None
+            
+            logger.info("Detected: Mutation Challenge")
+            
+            # Click "Trigger Mutation" button 5 times
+            for i in range(6):  # Click a few extra times to be safe
+                trigger_btns = self.driver.find_elements(By.XPATH, 
+                    "//button[contains(text(), 'Trigger Mutation') or contains(text(), 'Trigger')]")
+                for btn in trigger_btns:
+                    if btn.is_displayed():
+                        self.safe_click(btn)
+                        logger.debug(f"Clicked Trigger Mutation {i+1}")
+                        time.sleep(0.2)
+                        break
+            
+            # Click "Complete" button
+            complete_btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Complete')]")
+            for btn in complete_btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    logger.debug("Clicked Complete button")
+                    time.sleep(0.5)
+                    break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via mutation: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via mutation (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in mutation_challenge: {e}")
+        
+        return None
+
+    def handle_recursive_iframe_challenge(self) -> Optional[str]:
+        """Handle Recursive Iframe Challenge - navigate through nested levels.
+        
+        The challenge requires clicking through nested levels to reach the deepest level.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Recursive Iframe Challenge" not in body_text and "nested levels" not in body_text:
+                return None
+            
+            logger.info("Detected: Recursive Iframe Challenge")
+            
+            # Click through nested levels (typically 3-5 levels)
+            for level in range(1, 6):
+                level_elements = self.driver.find_elements(By.XPATH, 
+                    f"//*[contains(text(), 'Level {level}') or contains(text(), 'Enter Level')]")
+                for elem in level_elements:
+                    if elem.is_displayed():
+                        self.safe_click(elem)
+                        logger.debug(f"Clicked Level {level}")
+                        time.sleep(0.3)
+                        break
+            
+            # Check for code (should appear at deepest level)
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via recursive_iframe: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via recursive_iframe (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in recursive_iframe_challenge: {e}")
+        
+        return None
+
+    def handle_conditional_reveal_challenge(self) -> Optional[str]:
+        """Handle Conditional Reveal Challenge - meet conditions to reveal code.
+        
+        Similar to click-to-reveal but may have additional conditions.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Conditional" not in body_text:
+                return None
+            
+            logger.info("Detected: Conditional Reveal Challenge")
+            
+            # Click any reveal/show buttons
+            btns = self.driver.find_elements(By.XPATH, 
+                "//button[contains(text(), 'Reveal') or contains(text(), 'Show') or contains(text(), 'Complete')]")
+            for btn in btns:
+                if btn.is_displayed():
+                    self.safe_click(btn)
+                    time.sleep(0.3)
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via conditional_reveal: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via conditional_reveal (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in conditional_reveal_challenge: {e}")
+        
+        return None
+
+    def handle_calculated_challenge(self) -> Optional[str]:
+        """Handle Calculated Challenge - perform calculation to get code.
+        
+        The challenge provides a formula and requires entering the calculated result.
+        """
+        try:
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Calculated" not in body_text and "Calculate" not in body_text:
+                return None
+            
+            logger.info("Detected: Calculated Challenge")
+            
+            # Look for calculation hint in the page
+            # Format: "Calculate: step * multiplier + offset"
+            import re
+            calc_match = re.search(r'step\s*\*\s*(\d+)\s*\+\s*(\d+)', body_text)
+            if calc_match:
+                multiplier = int(calc_match.group(1))
+                offset = int(calc_match.group(2))
+                # Get current step number
+                step_match = re.search(r'Step\s*(\d+)', body_text)
+                if step_match:
+                    step_num = int(step_match.group(1))
+                    result = step_num * multiplier + offset
+                    logger.debug(f"Calculated: {step_num} * {multiplier} + {offset} = {result}")
+                    
+                    # Enter the result in input field
+                    inputs = self.driver.find_elements(By.XPATH, 
+                        "//input[@type='text' or @type='number']")
+                    for inp in inputs:
+                        if inp.is_displayed():
+                            inp.clear()
+                            inp.send_keys(str(result))
+                            time.sleep(0.2)
+                            break
+                    
+                    # Click submit/calculate button
+                    btns = self.driver.find_elements(By.XPATH, 
+                        "//button[contains(text(), 'Submit') or contains(text(), 'Calculate') or contains(text(), 'Reveal')]")
+                    for btn in btns:
+                        if btn.is_displayed():
+                            self.safe_click(btn)
+                            time.sleep(0.5)
+                            break
+            
+            # Check for code
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            code = self.find_code_in_text(body_text)
+            if code:
+                logger.info(f"Found code via calculated: {code}")
+                return code
+            
+            # Look for code in span elements
+            code_elements = self.driver.find_elements(By.XPATH, 
+                "//span[contains(@class, 'font-mono') and contains(@class, 'font-bold')]")
+            for elem in code_elements:
+                text = elem.text.strip()
+                if len(text) == 6 and text.isalnum():
+                    logger.info(f"Found code via calculated (from span): {text}")
+                    return text
+                
+        except Exception as e:
+            logger.debug(f"Error in calculated_challenge: {e}")
+        
+        return None
+
     def enter_code_and_submit(self, code: str) -> bool:
         """Enter the code and submit."""
         try:
@@ -1460,13 +1833,24 @@ class ChallengeSolver:
         # All challenge handlers in order of priority
         # Note: Modal challenge is now handled separately as an overlay
         handlers = [
+            # Advanced challenges (steps 21-30)
+            self.handle_shadow_dom_challenge,
+            self.handle_websocket_challenge,
+            self.handle_service_worker_challenge,
+            self.handle_mutation_challenge,
+            self.handle_recursive_iframe_challenge,
+            self.handle_conditional_reveal_challenge,
+            self.handle_calculated_challenge,
+            # Mid-level challenges (steps 11-20)
             self.handle_audio_challenge,
             self.handle_video_challenge,
             self.handle_multi_tab_challenge,
             self.handle_gesture_challenge,
+            self.handle_sequence_challenge,
+            self.handle_puzzle_solve,
+            # Basic challenges (steps 1-10)
             self.handle_keyboard_sequence,
             self.handle_delayed_reveal,
-            self.handle_puzzle_solve,
             self.handle_rotating_code,
             self.handle_encoded_base64,
             self.handle_obfuscated,
@@ -1476,7 +1860,6 @@ class ChallengeSolver:
             self.handle_hover_challenge,
             self.handle_drag_and_drop,
             self.handle_split_parts,
-            self.handle_sequence_challenge,
             self.handle_memory_challenge,
             self.handle_timing_challenge,
             self.handle_canvas_challenge,
@@ -1510,10 +1893,30 @@ class ChallengeSolver:
         
         # If we found a code, enter it
         if code:
+            # Store the current URL before submitting
+            current_url = self.driver.current_url
+            
             if self.enter_code_and_submit(code):
-                time.sleep(0.5)
+                # Wait for the page to navigate to the new step URL
+                # The website navigates to /step{N+1}?version={version} after accepting a code
+                time.sleep(1.5)
+                
+                # Wait for URL to change (indicates successful navigation)
+                for wait_attempt in range(10):
+                    new_url = self.driver.current_url
+                    if new_url != current_url:
+                        # URL changed - wait for React to render the new challenge
+                        time.sleep(1.0)
+                        
+                        # Verify the step counter has updated
+                        new_step = self.get_current_step()
+                        if new_step > step_num or new_step == 0 or "/finish" in new_url:
+                            self.metrics.step_times[step_num] = time.time() - step_start
+                            return True
+                    time.sleep(0.5)
+                
+                # Final check based on step counter
                 new_step = self.get_current_step()
-                # Step advanced if new_step > step_num OR if we can't find step (end of challenge)
                 if new_step > step_num or new_step == 0:
                     self.metrics.step_times[step_num] = time.time() - step_start
                     return True
@@ -1533,6 +1936,13 @@ class ChallengeSolver:
             self.setup_driver()
             self.driver.get(self.BASE_URL)
             time.sleep(1)
+            
+            # Clear session storage to ensure fresh session
+            try:
+                self.driver.execute_script("sessionStorage.clear(); localStorage.clear();")
+                logger.info("Cleared session and local storage")
+            except Exception as e:
+                logger.debug(f"Could not clear storage: {e}")
 
             # Click START button
             try:
@@ -1546,6 +1956,7 @@ class ChallengeSolver:
 
             consecutive_failures = 0
             current_step = 1
+            last_codes = []  # Track last few codes to detect repeating patterns
             
             while current_step <= self.metrics.total_steps:
                 # Check time limit
