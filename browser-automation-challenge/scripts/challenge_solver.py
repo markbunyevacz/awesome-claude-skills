@@ -78,7 +78,7 @@ class Metrics:
 class ChallengeSolver:
     """Main class for solving browser navigation challenges."""
 
-    BASE_URL = "https://serene-frangipane-7fd25b.netlify.app/"
+    BASE_URL = "https://serene-frangipane-7fd25b.netlify.app/?version=1"
     MAX_STEP_ATTEMPTS = 5
     ELEMENT_TIMEOUT = 3
 
